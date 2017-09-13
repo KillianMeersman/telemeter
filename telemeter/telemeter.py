@@ -1,12 +1,6 @@
 import requests
-import yaml
-import argparse
 import json
 from datetime import datetime
-
-parser = argparse.ArgumentParser()
-parser.add_argument("config", help="the config file")
-args = parser.parse_args()
 
 
 class UsageDay():
@@ -30,6 +24,12 @@ class Telemeter():
         self.offpeak_percentage = offpeak_percentage
         self.squeeze_percentage = squeeze_percentage
 
+    def __str__(self):
+        return "Telemeter: You have used {}% of your monthly usage\n\t{} GB peak usage\n\t{} GB off-peak usage".format(
+            round(self.squeeze_percentage, 1),
+            round(self.peak_usage, 1),
+            round(self.offpeak_usage, 1))
+
 
 def get_telemeter_json(username, password, identifier):
     USER_AGENT = "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:40.0) Gecko/20100101 Firefox/40.1"
@@ -49,15 +49,7 @@ def get_telemeter_json(username, password, identifier):
         raise Exception("Invalid credentials or no internet connection")
 
 
-def get_telemeter():
-    with open(args.config, 'r') as config:
-        y = yaml.load(config)
-        username = y["username"]
-        password = y["password"]
-        identifier = y["identifier"]
-
-    print(username, password, identifier)
-
+def get_telemeter(username, password, identifier):
     t_json = get_telemeter_json(username, password, identifier)
     days = len(t_json["days"]) * [None]
 
@@ -74,3 +66,19 @@ def get_telemeter():
         t_json["offPeakUsagePercentage"],
         t_json["squeezePercentage"]
     )
+
+
+if __name__ == "__main__":
+    import yaml
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("config", help="the config file")
+    args = parser.parse_args()
+
+    with open(args.config, 'r') as config:
+        y = yaml.load(config)
+        username = y["username"]
+        password = y["password"]
+        identifier = y["identifier"]
+
+    print(get_telemeter(username, password, identifier))
