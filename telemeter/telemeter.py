@@ -42,10 +42,11 @@ def get_telemeter_json(username, password, identifier):
     r = s.get("https://mijn.telenet.be")
     r = s.post("https://login.prd.telenet.be/openid/login.do", data=payload)
     r = s.get("https://mijn.telenet.be/mijntelenet/navigation/navigation.do?family=DEFAULT&identifier=DEFAULT")
-    r = s.get("https://mijn.telenet.be/mijntelenet/telemeter/data/usageDetails.do?identifier={}".format(identifier))
+    r = s.get("https://api.prd.telenet.be/ocapi/public/?p=internetusage,internetusagereminder")
     try:
-        return r.json()["fup"]
-    except json.decoder.JSONDecodeError:
+        j = r.json()["fup"]
+        return j
+    except Exception:
         raise Exception("Invalid credentials or no internet connection")
 
 
