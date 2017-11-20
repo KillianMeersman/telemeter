@@ -1,6 +1,11 @@
-import requests
 import json
+from selenium import webdriver
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.by import By
 from datetime import datetime
+import time
 
 
 class UsageDay():
@@ -31,27 +36,38 @@ class Telemeter():
             round(self.offpeak_usage, 1))
 
 
-def get_telemeter_json(username, password, identifier):
-    USER_AGENT = "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:40.0) Gecko/20100101 Firefox/40.1"
-    headers = {'User-Agent': USER_AGENT}
-    payload = {"j_username": username, "j_password": password, "rememberme": True}
+def get_telemeter_json(username, password):
+    profile = webdriver.FirefoxProfile()
+    profile.set_preference("general.useragent.override", "Personal Telemeter scraper v2.0")
+    driver = webdriver.Firefox(profile)
 
-    s = requests.Session()
-    s.headers.update(headers)
+    driver.get("https://mijn.telenet.be")
+    WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CLASS_NAME, "login-button.tn-styling.ng-scope")))
+    login_button_prt = driver.find_element_by_class_name("login-button.tn-styling.ng-scope")
+    login_button = login_button_prt.find_element_by_xpath(".//div")
+    login_button.click()
 
-    r = s.get("https://mijn.telenet.be")
-    r = s.post("https://login.prd.telenet.be/openid/login.do", data=payload)
-    r = s.get("https://mijn.telenet.be/mijntelenet/navigation/navigation.do?family=DEFAULT&identifier=DEFAULT")
-    r = s.get("https://api.prd.telenet.be/ocapi/public/?p=internetusage,internetusagereminder")
+    # Fill in login form
+    user_field = driver.find_element_by_id("j_username")
+    user_field.send_keys(username)
+    pass_field = driver.find_element_by_id("j_password")
+    pass_field.send_keys(password)
+    pass_field.send_keys(Keys.RETURN)
+
+    # Wait for main page to load (needed for certain cookies I guess)
+    WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CLASS_NAME, "pdPict")))
+
+    driver.get("https://api.prd.telenet.be/ocapi/public/?p=internetusage,internetusagereminder")
+    # print(driver.page_source)
     try:
-        j = r.json()["fup"]
+        j = json.loads(driver.page_source)
         return j
     except Exception:
         raise Exception("Invalid credentials or no internet connection")
 
 
-def get_telemeter(username, password, identifier):
-    t_json = get_telemeter_json(username, password, identifier)
+def get_telemeter(username, password):
+    t_json = get_telemeter_json(username, password)
     days = len(t_json["days"]) * [None]
 
     current_year_str = "/{}".format(datetime.now().year)
@@ -80,6 +96,5 @@ if __name__ == "__main__":
         y = yaml.load(config)
         username = y["username"]
         password = y["password"]
-        identifier = y["identifier"]
 
-    print(get_telemeter(username, password, identifier))
+    print(get_telemeter(username, password))
