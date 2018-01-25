@@ -1,13 +1,12 @@
+import os
+import json
+from datetime import datetime, timedelta
+import requests
 from selenium import webdriver
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-from datetime import datetime
-import requests
-import json
-import os
-import re
 
 
 class UsageDay():
@@ -21,22 +20,31 @@ class UsageDay():
 
 
 class Telemeter():
-    def __init__(self, peak_usage, offpeak_usage, squeezed, max_usage, days):
+    def __init__(self, peak_usage, offpeak_usage, squeezed, max_usage, days, period_start, period_end):
         self.peak_usage = peak_usage
         self.offpeak_usage = offpeak_usage
         self.squeezed = squeezed
         self.max_usage = max_usage
         self.days = days
+        self.period_start = period_start
+        self.period_end = period_end
 
     def percentage_used(self):
         return (self.peak_usage / self.max_usage) * 100
 
+    def days_remaining(self):
+        return (self.period_end - datetime.now()).days
+
     def __str__(self):
-        return "Telemeter: You have used {}% of your monthly usage (limit {}GB)\n\t{} GB peak usage\n\t{} GB off-peak usage".format(
+        return """Telemeter: You have used {}% of your monthly usage (limit {}GB)
+            {} GB peak usage
+            {} GB off-peak usage
+            {} days remaining""".format(
             round(self.percentage_used(), 1),
             self.max_usage,
             round(self.peak_usage, 1),
-            round(self.offpeak_usage, 1))
+            round(self.offpeak_usage, 1),
+            self.days_remaining())
 
 
 def get_telemeter_json(username, password):
@@ -102,8 +110,8 @@ def get_telemeter(username, password):
     last_updated = current_usage["lastupdated"]
 
     current_usage = current_usage["availableperiods"][0]["usages"][0]
-    period_start = current_usage["periodstart"]
-    period_end = current_usage["periodend"]
+    period_start = datetime.strptime(current_usage["periodstart"][:10:], "%Y-%m-%d")
+    period_end = datetime.strptime(current_usage["periodend"][:10:], "%Y-%m-%d")
 
     days = len(current_usage["totalusage"]["dailyusages"]) * [None]
 
@@ -118,7 +126,9 @@ def get_telemeter(username, password):
         current_usage["totalusage"]["offpeak"] / 1E6,
         current_usage["squeezed"],
         service_limit,
-        days
+        days,
+        period_start,
+        period_end
     )
 
 
