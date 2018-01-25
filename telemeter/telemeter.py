@@ -1,12 +1,20 @@
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
 from selenium import webdriver
+from selenium.common import exceptions as seleniumexc
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
+
+
+class NetworkError(Exception):
+    def __init__(self, message, address, code):
+        super(__class__, self).__init__(message)
+        self.address = address
+        self.code = code
 
 
 class UsageDay():
@@ -47,48 +55,73 @@ class Telemeter():
             self.days_remaining())
 
 
-def get_telemeter_json(username, password):
+def get_telemeter_json(username, password, timeout=3):
     USER_AGENT = "Personal Telemeter scraper v2.0"
     os.environ['MOZ_HEADLESS'] = '1'
 
     profile = webdriver.FirefoxProfile()
     profile.set_preference("general.useragent.override", USER_AGENT)
-    driver = webdriver.Firefox(profile)
-
-    driver.get("https://mijn.telenet.be")
-    WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CLASS_NAME, "login-button.tn-styling.ng-scope")))
-    login_button_prt = driver.find_element_by_class_name("login-button.tn-styling.ng-scope")
-    login_button = login_button_prt.find_element_by_xpath(".//div")
-    login_button.click()
-
-    # Fill in login form
-    user_field = driver.find_element_by_id("j_username")
-    user_field.send_keys(username)
-    pass_field = driver.find_element_by_id("j_password")
-    pass_field.send_keys(password)
-    pass_field.send_keys(Keys.RETURN)
-
-    # Wait for main page to load (needed for certain cookies I guess)
-    WebDriverWait(driver, 3).until(EC.presence_of_element_located((By.CLASS_NAME, "pdPict")))
-
-    driver.get("https://api.prd.telenet.be/ocapi/public/?p=internetusage")
-    # source = driver.find_element_by_tag_name('body').text
-
-    # Firefox wraps JSON in HTML so just make a simple request with Selenium's cookies (too lazy to deal with it)
-    headers = {"User-Agent": USER_AGENT}
-    cookies = {}
-    # Get Selenium cookies
-    for cookie in driver.get_cookies():
-        cookies[cookie["name"]] = cookie["value"]
-
-    r = requests.get("https://api.prd.telenet.be/ocapi/public/?p=internetusage", cookies=cookies, headers=headers)
-    source = r.text
 
     try:
+        driver = webdriver.Firefox(profile)
+
+        # login page
+        try:
+            driver.get("https://mijn.telenet.be")
+        except seleniumexc.WebDriverException:
+            raise NetworkError("Failed to reach page", "https://mijn.telenet.be", 404)
+
+        # wait for login button to load
+        try:
+            WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.CLASS_NAME, "login-button.tn-styling.ng-scope")))
+        except seleniumexc.TimeoutException:
+            raise RuntimeError("Timed out waiting for login page")
+
+        login_button_prt = driver.find_element_by_class_name("login-button.tn-styling.ng-scope")
+        login_button = login_button_prt.find_element_by_xpath(".//div")
+        login_button.click()
+
+        # Fill in login form
+        user_field = driver.find_element_by_id("j_username")
+        user_field.send_keys(username)
+        pass_field = driver.find_element_by_id("j_password")
+        pass_field.send_keys(password)
+        pass_field.send_keys(Keys.RETURN)
+
+        # Wait for main page to load
+        try:
+            WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.CLASS_NAME, "pdPict")))
+        except seleniumexc.TimeoutException:
+            raise RuntimeError("Timed out waiting for main page")
+
+        try:
+            driver.get("https://api.prd.telenet.be/ocapi/public/?p=internetusage")
+        except seleniumexc.WebDriverException:
+            raise NetworkError("Failed to reach page", "https://api.prd.telenet.be/ocapi/public/?p=internetusage", 404)
+
+        # Firefox wraps JSON in HTML so just make a simple request with Selenium's cookies (ewontfix)
+        headers = {"User-Agent": USER_AGENT}
+        cookies = {}
+
+        # Get Selenium cookies
+        for cookie in driver.get_cookies():
+            cookies[cookie["name"]] = cookie["value"]
+
+        try:
+            r = requests.get("https://api.prd.telenet.be/ocapi/public/?p=internetusage", cookies=cookies, headers=headers)
+            source = r.text
+        except requests.exceptions.ConnectionError:
+            raise NetworkError("Could not reach page", "https://api.prd.tdelenet.be/ocapi/public/?p=internetusage", 404)
+
         j = json.loads(source)
 
         # Get max usage
-        r = requests.get(j["internetusage"][0]["availableperiods"][0]["usages"][0]["specurl"], cookies=cookies, headers=headers)
+        try:
+            spec_url = j["internetusage"][0]["availableperiods"][0]["usages"][0]["specurl"]
+            r = requests.get(spec_url, cookies=cookies, headers=headers)
+        except requests.exceptions.ConnectionError:
+            raise NetworkError("Could not reach page", spec_url, 404)
+
         pro_j = json.loads(r.text)
         service_limit = int(pro_j["product"]["characteristics"]["service_category_limit"]["value"])
         service_limit_unit = pro_j["product"]["characteristics"]["service_category_limit"]["unit"]
@@ -98,28 +131,35 @@ def get_telemeter_json(username, password):
             service_limit *= 1000
 
         return j, service_limit
-    except Exception:
-        raise Exception("Could not parse JSON, perhaps invalid credentials or no internet connection")
+
+    except json.JSONDecodeError:
+        raise RuntimeError("Received invalid JSON")
     finally:
         driver.quit()
 
 
 def get_telemeter(username, password):
     t_json, service_limit = get_telemeter_json(username, password)
-    current_usage = t_json["internetusage"][0]
-    last_updated = current_usage["lastupdated"]
 
-    current_usage = current_usage["availableperiods"][0]["usages"][0]
-    period_start = datetime.strptime(current_usage["periodstart"][:10:], "%Y-%m-%d")
-    period_end = datetime.strptime(current_usage["periodend"][:10:], "%Y-%m-%d")
+    try:
+        current_usage = t_json["internetusage"][0]["availableperiods"][0]["usages"][0]
+    except KeyError:
+        raise RuntimeError("Unexpected JSON received")
 
+    # Get period start & end date
+    period_start = current_usage["periodstart"]
+    period_start = datetime.strptime(period_start[:period_start.index('T')], "%Y-%m-%d")
+    period_end = current_usage["periodend"]
+    period_end = datetime.strptime(period_end[:period_end.index('T')], "%Y-%m-%d")
+
+     # Enumerate days
     days = len(current_usage["totalusage"]["dailyusages"]) * [None]
 
     for idx, day in enumerate(current_usage["totalusage"]["dailyusages"]):
         days[idx] = UsageDay(datetime.strptime(day["date"][:day["date"].index('T')], "%Y-%m-%d").date(),
-                             day["peak"] / 1E6,
-                             day["offpeak"] / 1E6
-                             )
+            day["peak"] / 1E6,
+            day["offpeak"] / 1E6
+        )
 
     return Telemeter(
         current_usage["totalusage"]["peak"] / 1E6,
