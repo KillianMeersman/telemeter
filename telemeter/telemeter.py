@@ -138,9 +138,7 @@ def get_telemeter_json(username, password, timeout=3):
         driver.quit()
 
 
-def get_telemeter(username, password):
-    t_json, service_limit = get_telemeter_json(username, password)
-
+def get_telemeter(t_json, service_limit):
     try:
         current_usage = t_json["internetusage"][0]["availableperiods"][0]["usages"][0]
     except KeyError:
@@ -177,6 +175,8 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("config", help="yaml file containing username and password")
+    parser.add_argument("--raw", help="Do not convert to Telemeter instance, return raw JSON as returned by the Telenet site",
+        action="store_true")
     args = parser.parse_args()
 
     with open(args.config, 'r') as config:
@@ -185,4 +185,8 @@ if __name__ == "__main__":
         password = y["password"]
 
     print("Fetching info, please wait...")
-    print(get_telemeter(username, password))
+    t_json, service_limit = get_telemeter_json(username, password)
+    if args.raw:
+        print(t_json)
+    else:
+        print(get_telemeter(t_json, service_limit))
