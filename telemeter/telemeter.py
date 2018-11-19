@@ -10,7 +10,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 
 
-class UsageDay():
+class UsageDay(object):
     """Represents a day of internet usage"""
 
     def __init__(self, date, peak_usage, offpeak_usage):
@@ -22,7 +22,7 @@ class UsageDay():
         return "{} - PEAK: {} GB, OFF-PEAK: {} GB".format(self.date, self.peak_usage, self.offpeak_usage)
 
 
-class Telemeter():
+class Telemeter(object):
     """ Telemeter object as presented by Telenet"""
 
     def __init__(self, peak_usage, offpeak_usage, squeezed, max_usage, days, period_start, period_end):
