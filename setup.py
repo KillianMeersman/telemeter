@@ -1,17 +1,25 @@
-from distutils.core import setup
+import setuptools
 
-setup(
-    name = "telemeter",
-    packages = ["telemeter"],
-    version = "2.0",
-    description = "Gets information about monthly Telenet internet usage",
-    author = "Killian Meersman",
-    author_email = "killian.meersman@gmail.com ",
-    url = "https://github.com/KillianMeersman/telemeter",
-    download_url = "https://github.com/KillianMeersman/telemeter/archive/v2.0.tar.gz",
-    keywords = ["telemeter", "telenet", "scraper"],
-    classifiers = [],
-    install_requires = [
+with open("README.md") as f:
+    long_description=f.read()
+
+setuptools.setup(
+    name="telemeter",
+    version="1.0.0",
+    author="Killian Meersman",
+    author_email="killian.meersman@gmail.com ",
+    description="Retrieves information about Telenet internet usage",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/KillianMeersman/telemeter",
+    packages=setuptools.find_packages(),
+    keywords="telenet telemeter",
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: OS Independent",
+    ],
+    install_requires=[
         "requests",
         "pyyaml",
         "selenium"

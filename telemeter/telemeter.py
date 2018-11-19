@@ -181,4 +181,4 @@ if __name__ == "__main__":
         password = y["password"]
 
     print("Fetching info, please wait...")
-    print(Telemeter.from_json(get_telemeter_json(username, password))
+    print(Telemeter.from_json(get_telemeter_json(username, password)))
