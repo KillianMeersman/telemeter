@@ -1,14 +1,19 @@
-# Telemeter
+# Telenet Telemeter parser
+## About
+This program queries the 'Mijn Telenet' site to retrieve data about a user's monthly Telenet internet usage (a.k.a. telemeter).\
+It uses Selenium to do this as the site uses Javascript everywhere, please make sure you have Firefox and the Gecko driver installed.
 
-This script fetches information about your monthly Telenet internet usage (a.k.a. the telemeter).\
-Now uses Selenium as the new site won't even load properly without 1MB of javascript and I don't have the time to figure out all the necessary requests.
+Can be run as a standalone script or used as a Python 3 module.
+If used as a standalone script it prints telemeter info to the console.
+Main argument is a YAML file with your username and password:
 
-Returns a Telemeter object or prints telemeter info to the console.\
-Main argument is a yaml file with your username and password:
-
-username: <username>\
+```yaml
+username: <username>
 password: <password>
+```
 
-Make sure to install Firefox and the Gecko driver.\
-https://github.com/mozilla/geckodriver/releases \
-http://selenium-python.readthedocs.io/installation.html
+This script is not necessarily deterministic, due to the nature of the Telenet site it might error on one run and succeed on the other. If this happens often try increasing the timeout on the get_telemeter_json function.
+
+## Requirements
+1. Mozilla Firefox
+2. Gecko driver (https://github.com/mozilla/geckodriver/releases)
