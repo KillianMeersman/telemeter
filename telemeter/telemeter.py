@@ -164,7 +164,7 @@ if __name__ == "__main__":
         prog="Telenet Telemeter parser",
         description="""
                     This program queries the 'Mijn Telenet' site to retrieve data about a user's Telemeter.
-                    It uses Selenium to do this as the site uses Javascript everywhere, make sure you have the GeckoDriver installed.
+                    It uses Selenium to do this as the site uses Javascript everywhere, make sure you have the Gecko driver installed.
 
                     Provide the program with a configuration YAML file containing your Telenet credentials e.g.
 
@@ -173,7 +173,6 @@ if __name__ == "__main__":
                     """
     )
     parser.add_argument("config", help="yaml file containing username and password")
-    parser.add_argument("--raw", help="Do not convert to Telemeter instance, return raw JSON as returned by the Telenet site", action="store_true")
     args = parser.parse_args()
 
     with open(args.config, 'r') as config:
@@ -182,8 +181,4 @@ if __name__ == "__main__":
         password = y["password"]
 
     print("Fetching info, please wait...")
-    meter_json, service_limit = get_telemeter_json(username, password)
-    if args.raw:
-        print(meter_json)
-    else:
-        print(Telemeter.from_json(meter_json, service_limit))
+    print(Telemeter.from_json(get_telemeter_json(username, password))
