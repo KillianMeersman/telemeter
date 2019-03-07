@@ -176,7 +176,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     with open(args.config, 'r') as config:
-        y = yaml.load(config)
+        y = yaml.load(config, Loader=yaml.BaseLoader)
         username = y["username"]
         password = y["password"]
 
