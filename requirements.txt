@@ -1,7 +1,7 @@
-certifi==2018.11.29
+certifi==2019.3.9
 chardet==3.0.4
 idna==2.8
-pyyaml>=4.2b1
-requests==2.21.0
+PyYAML==5.1
+requests==2.22.0
 selenium==3.141.0
-urllib3==1.24.1
+urllib3==1.25.3

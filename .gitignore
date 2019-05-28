@@ -102,3 +102,6 @@ ENV/
 
 # telenet credentials
 credentials.yaml
+
+.vscode/
+upload.sh
