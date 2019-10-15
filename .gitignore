@@ -100,8 +100,7 @@ ENV/
 # mypy
 .mypy_cache/
 
-# telenet credentials
-credentials.yaml
-
 .vscode/
 upload.sh
+
+cookies.json
