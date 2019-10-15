@@ -1,13 +1,13 @@
 import setuptools
 
 with open("README.md") as f:
-    long_description=f.read()
+    long_description = f.read()
 
 setuptools.setup(
     name="telemeter",
-    version="1.0.3",
+    version="2.0.0",
     author="Killian Meersman",
-    author_email="killian.meersman@gmail.com ",
+    author_email="hi@killianm.dev",
     description="Retrieves information about Telenet internet usage",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -21,7 +21,6 @@ setuptools.setup(
     ],
     install_requires=[
         "requests",
-        "pyyaml",
         "selenium"
     ]
 )
