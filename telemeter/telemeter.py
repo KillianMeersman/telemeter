@@ -206,38 +206,48 @@ def _main():
                         help="Do not cache cookies")
     parser.add_argument("--cache-file", dest='cache_file', default='./cookies.json',
                         help="JSON file in which cookies are cached, default is ./cookies.json")
+    parser.add_argument("--display-days", dest='display_days', default=False, action='store_true',
+                        help="Display usage per-day")
     args = parser.parse_args()
 
+    # Use cached cookies or fetch new ones
     if args.cache and os.path.isfile(args.cache_file):
+        print("Using cached cookies")
         with open(args.cache_file, 'r') as f:
             cookies = json.loads(f.read())
+    else:
+        username = os.environ.get('TELENET_USERNAME', None)
+        password = os.environ.get('TELENET_PASSWORD', None)
 
-        try:
-            print("Using cached cookies")
-            meter_json, service_limit = get_telemeter_json(cookies)
-            print(Telemeter.from_json(meter_json, service_limit))
-            return
-        except UnauthorizedException:
-            print("Cached cookies invalidated, removing")
-            os.remove(args.cache_file)
+        if username is None:
+            username = input('Username: ')
 
-    username = os.environ.get('TELENET_USERNAME', None)
-    password = os.environ.get('TELENET_PASSWORD', None)
+        if password is None:
+            password = getpass('Password: ')
 
-    if username is None:
-        username = input('Username: ')
+        print("Fetching cookies")
 
-    if password is None:
-        password = getpass('Password: ')
+        cookies = get_telemeter_cookies(username, password, headless=args.headless)
+        with open('cookies.json', 'w+') as f:
+            f.write(json.dumps(cookies))
 
-    print("Fetching cookies")
-    cookies = get_telemeter_cookies(username, password, headless=args.headless)
-    with open('cookies.json', 'w+') as f:
-        f.write(json.dumps(cookies))
+    # Attempt to get the API data
+    try:
+        print("Fetching Telemeter data")
+        meter_json, service_limit = get_telemeter_json(cookies)
+        telemeter = Telemeter.from_json(meter_json, service_limit)
+    except UnauthorizedException:
+        print("Request unauthorized, removing cached cookies")
+        os.remove(args.cache_file)
+        return
 
-    print("Fetching Telemeter data")
-    meter_json, service_limit = get_telemeter_json(cookies)
-    print(Telemeter.from_json(meter_json, service_limit))
+    if args.display_days:
+        print()
+        for day in telemeter.days:
+            print(day)
+
+    print()
+    print(telemeter)
 
 
 if __name__ == "__main__":
