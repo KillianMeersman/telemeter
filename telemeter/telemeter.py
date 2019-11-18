@@ -87,11 +87,12 @@ class Telemeter(object):
         return """Telemeter: You have used {}% of your monthly usage (limit {}GB)
             {} GB peak usage
             {} GB off-peak usage
-            {} days remaining""".format(
+            Period ends {} ({} days remaining)""".format(
             round(self.percentage_used(), 1),
             self.max_usage,
             round(self.peak_usage, 1),
             round(self.offpeak_usage, 1),
+            self.period_end.strftime('%d-%m-%Y'),
             self.days_remaining())
 
 
