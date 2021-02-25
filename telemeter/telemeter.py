@@ -1,153 +1,158 @@
-import os
 import json
-import requests
+import os
 from datetime import datetime
-from selenium import webdriver
-from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.common.by import By
+from typing import List
+
+import requests
+from pydantic import BaseModel
+
+TELENET_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S.0+01:00"
 
 
-USER_AGENT = "Personal Telemeter scraper v2.0"
+def _kibibyte_to_gibibyte(kib):
+    return kib / (2 ** 20)
 
 
 class UnauthorizedException(Exception):
     pass
 
 
-class UsageDay(object):
+class UsageDay(BaseModel):
     """Represents a day of internet usage"""
 
-    def __init__(self, date, peak_usage, offpeak_usage):
-        self.date = date
-        self.peak_usage = peak_usage
-        self.offpeak_usage = offpeak_usage
+    date: datetime
+    peak_usage: int
+    offpeak_usage: int
 
     def __str__(self):
-        return "{} - PEAK: {} GB, OFF-PEAK: {} GB".format(self.date, self.peak_usage, self.offpeak_usage)
+        peak_usage_gib = _kibibyte_to_gibibyte(self.peak_usage)
+        offpeak_usage_gib = _kibibyte_to_gibibyte(self.offpeak_usage)
+        return f"{self.date.strftime('%Y-%m-%d')}: {peak_usage_gib:4.2f} GiB\t{offpeak_usage_gib:4.2f} GiB"
 
 
-class Telemeter(object):
-    """Telemeter object as presented by Telenet"""
+class TelenetProductUsage(BaseModel):
+    product_type: str
+    squeezed: bool
+    period_start: datetime
+    period_end: datetime
 
-    def __init__(self, peak_usage, offpeak_usage, squeezed, max_usage, days, period_start, period_end):
-        self.peak_usage = peak_usage
-        self.offpeak_usage = offpeak_usage
-        self.squeezed = squeezed
-        self.max_usage = max_usage
-        self.days = days
-        self.period_start = period_start
-        self.period_end = period_end
+    included_volume: int
+    peak_usage: int
+    offpeak_usage: int
+    daily_usage: List[UsageDay]
 
-    @staticmethod
-    def from_json(meter_json, service_limit):
-        """Converts telemeter JSON and a service limit in GB to a Telemeter instance"""
+    @classmethod
+    def from_json(cls, data: dict):
+        days = [
+            UsageDay(
+                date=datetime.strptime(x["date"], TELENET_DATETIME_FORMAT),
+                peak_usage=x["peak"],
+                offpeak_usage=x["offpeak"],
+            )
+            for x in data["totalusage"]["dailyusages"]
+        ]
 
-        try:
-            current_usage = meter_json["internetusage"][0]["availableperiods"][0]["usages"][0]
-        except KeyError:
-            raise RuntimeError("Unexpected JSON received")
-
-        # Get period start & end date
-        period_start = current_usage["periodstart"]
-        period_start = datetime.strptime(
-            period_start[:period_start.index('T')], "%Y-%m-%d")
-        period_end = current_usage["periodend"]
-        period_end = datetime.strptime(
-            period_end[:period_end.index('T')], "%Y-%m-%d")
-
-        # Enumerate days
-        days = len(current_usage["totalusage"]["dailyusages"]) * [None]
-
-        for idx, day in enumerate(current_usage["totalusage"]["dailyusages"]):
-            days[idx] = UsageDay(datetime.strptime(day["date"][:day["date"].index('T')], "%Y-%m-%d").date(),
-                                 day["peak"] / 1E6,
-                                 day["offpeak"] / 1E6
-                                 )
-
-        return Telemeter(
-            current_usage["totalusage"]["peak"] / 1E6,
-            current_usage["totalusage"]["offpeak"] / 1E6,
-            current_usage["squeezed"],
-            service_limit,
-            days,
-            period_start,
-            period_end
+        return cls(
+            product_type=data["producttype"],
+            squeezed=data["squeezed"],
+            period_start=datetime.strptime(
+                data["periodstart"], TELENET_DATETIME_FORMAT
+            ),
+            period_end=datetime.strptime(data["periodend"], TELENET_DATETIME_FORMAT),
+            included_volume=data["includedvolume"],
+            peak_usage=data["totalusage"]["peak"],
+            offpeak_usage=data["totalusage"]["offpeak"],
+            daily_usage=days,
         )
 
-    def percentage_used(self):
-        return (self.peak_usage / self.max_usage) * 100
+    def __str__(self):
+        peak_usage_gib = _kibibyte_to_gibibyte(self.peak_usage)
+        offpeak_usage_gib = _kibibyte_to_gibibyte(self.offpeak_usage)
+        return f"Usage for {self.product_type}: {peak_usage_gib:4.2f} GiB peak usage, {offpeak_usage_gib:4.2f} GiB offpeak usage"
 
-    def days_remaining(self):
-        return (self.period_end - datetime.now()).days
+
+class Telemeter(BaseModel):
+    period_start: datetime
+    period_end: datetime
+    products: List[TelenetProductUsage]
+
+    @classmethod
+    def from_json(cls, data: dict):
+        for period in data["internetusage"][0]["availableperiods"]:
+            # '2021-02-19T00:00:00.0+01:00'
+            start = datetime.strptime(period["start"], TELENET_DATETIME_FORMAT)
+            end = datetime.strptime(period["end"], TELENET_DATETIME_FORMAT)
+            products = [TelenetProductUsage.from_json(x) for x in period["usages"]]
+            yield cls(period_start=start, period_end=end, products=products)
 
     def __str__(self):
-        return """Telemeter: You have used {}% of your monthly usage (limit {}GB)
-            {} GB peak usage
-            {} GB off-peak usage
-            Period ends {} ({} days remaining)""".format(
-            round(self.percentage_used(), 1),
-            self.max_usage,
-            round(self.peak_usage, 1),
-            round(self.offpeak_usage, 1),
-            self.period_end.strftime('%d-%m-%Y'),
-            self.days_remaining())
+        s = f"Telemeter for {self.period_start} to {self.period_end}"
+        for product in self.products:
+            s += f"\n\t {product}"
+        return s
 
 
-def get_telemeter_cookies(username, password, timeout=3, headless=True):
-    """Returns cookies after establishing a session using Firefox Gecko driver"""
+class TelenetSession(object):
+    def __init__(self):
+        self.s = requests.Session()
+        self.s.headers[
+            "User-Agent"
+        ] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.182 Safari/537.36"
 
-    if headless:
-        os.environ['MOZ_HEADLESS'] = '1'
+    def login(self, username, password):
+        # Get OAuth2 state / nonce
+        r = self.s.get(
+            "https://api.prd.telenet.be/ocapi/oauth/userdetails",
+            headers={
+                "x-alt-referer": "https://www2.telenet.be/nl/klantenservice/#/pages=1/menu=selfservice"
+            },
+        )
+        assert r.status_code == 401
+        state, nonce = r.text.split(",", maxsplit=2)
 
-    # Connect to webdriver
-    profile = webdriver.FirefoxProfile()
-    profile.set_preference("general.useragent.override", USER_AGENT)
-    driver = webdriver.Firefox(profile)
+        # Log in
+        self.s.get(
+            f"https://login.prd.telenet.be/openid/oauth/authorize?client_id=ocapi&response_type=code&claims=%7B%22id_token%22%3A%7B%22http%3A%2F%2Ftelenet.be%2Fclaims%2Froles%22%3Anull%2C%22http%3A%2F%2Ftelenet.be%2Fclaims%2Flicenses%22%3Anull%7D%7D&lang=nl&state={state}&nonce={nonce}&prompt=login"
+        )
+        r = self.s.post(
+            "https://login.prd.telenet.be/openid/login.do",
+            data={
+                "j_username": username,
+                "j_password": password,
+                "rememberme": True,
+            },
+        )
+        assert r.status_code == 200
 
-    try:
-        # login page
-        driver.get("https://mijn.telenet.be")
+        self.s.headers["X-TOKEN-XSRF"] = self.s.cookies["TOKEN-XSRF"]
 
-        # wait for login button to load
-        WebDriverWait(driver, timeout).until(EC.presence_of_element_located(
-            (By.CLASS_NAME, "login-button.tn-styling.ng-scope")))
+        r = self.s.get(
+            "https://api.prd.telenet.be/ocapi/oauth/userdetails",
+            headers={
+                "x-alt-referer": "https://www2.telenet.be/nl/klantenservice/#/pages=1/menu=selfservice",
+            },
+        )
+        assert r.status_code == 200
 
-        # Navigate to login form
-        login_button_prt = driver.find_element_by_class_name(
-            "login-button.tn-styling.ng-scope")
-        login_button = login_button_prt.find_element_by_xpath(".//div")
-        login_button.click()
+    def userdetails(self):
+        r = self.s.get(
+            "https://api.prd.telenet.be/ocapi/oauth/userdetails",
+            headers={
+                "x-alt-referer": "https://www2.telenet.be/nl/klantenservice/#/pages=1/menu=selfservice",
+            },
+        )
+        assert r.status_code == 200
+        return r.json()
 
-        # Fill in login form
-        user_field = driver.find_element_by_id("j_username")
-        user_field.send_keys(username)
-        pass_field = driver.find_element_by_id("j_password")
-        pass_field.send_keys(password)
-        pass_field.send_keys(Keys.RETURN)
-
-        # Wait for main page to load
-        WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "pdPict")))
-
-        # Get JSON endpoint, for some reason this has to be done with Selenium first.
-        # Presumably some kind of authentication cookie or CSRF protection is the culprit
-        driver.get("https://api.prd.telenet.be/ocapi/public/?p=internetusage")
-
-        cookies = {}
-
-        # Copy webdriver cookies to dictionary
-        for cookie in driver.get_cookies():
-            cookies[cookie["name"]] = cookie["value"]
-
-        return cookies
-
-    except TimeoutException:
-        raise RuntimeError("Connection timed out")
-    finally:
-        driver.quit()
+    def telemeter(self):
+        r = self.s.get(
+            "https://api.prd.telenet.be/ocapi/public/?p=internetusage,internetusagereminder",
+            headers={
+                "x-alt-referer": "https://www2.telenet.be/nl/klantenservice/#/pages=1/menu=selfservice",
+            },
+        )
+        assert r.status_code == 200
+        return next(Telemeter.from_json(r.json()))
 
 
 def get_telemeter_json(cookies):
@@ -157,23 +162,31 @@ def get_telemeter_json(cookies):
     headers = {"User-Agent": USER_AGENT}
 
     # Get JSON endpoint again with raw request
-    r = requests.get("https://api.prd.telenet.be/ocapi/public/?p=internetusage",
-                     cookies=cookies, headers=headers)
+    r = requests.get(
+        "https://api.prd.telenet.be/ocapi/public/?p=internetusage",
+        cookies=cookies,
+        headers=headers,
+    )
 
-    if r.status_code == 401:
-        raise UnauthorizedException("Request returned 401")
+    if 200 > r.status_code > 300:
+        raise UnauthorizedException(f"Request returned {r.status_code}")
 
     meter_json = json.loads(r.text)
 
     # Get max usage
-    spec_url = meter_json["internetusage"][0]["availableperiods"][0]["usages"][0]["specurl"]
+    spec_url = meter_json["internetusage"][0]["availableperiods"][0]["usages"][0][
+        "specurl"
+    ]
     r = requests.get(spec_url, cookies=cookies, headers=headers)
 
     # parse JSON
     spec_json = json.loads(r.text)
     service_limit = int(
-        spec_json["product"]["characteristics"]["service_category_limit"]["value"])
-    service_limit_unit = spec_json["product"]["characteristics"]["service_category_limit"]["unit"]
+        spec_json["product"]["characteristics"]["service_category_limit"]["value"]
+    )
+    service_limit_unit = spec_json["product"]["characteristics"][
+        "service_category_limit"
+    ]["unit"]
 
     if service_limit_unit == "MB":
         service_limit /= 1000
@@ -191,64 +204,33 @@ def _main():
         prog="Telenet Telemeter parser",
         description="""
                     This program queries the 'Mijn Telenet' site to retrieve data about a user's Telemeter.
-                    It uses Selenium to do this so make sure you have the Gecko driver installed.
-
-                    The program will try and read credentials from the following environment variables:
-
-                    TELENET_USERNAME
-                    TELENET_PASSWORD
-
-                    If it cannot find these variables, the user will be prompted for username and password
-                    """
+                    """,
     )
-    parser.add_argument("--no-headless", dest='headless', default=True, action='store_false',
-                        help="Run the Gecko driver with GUI")
-    parser.add_argument("--no-cache", dest='cache', default=True, action='store_false',
-                        help="Do not cache cookies")
-    parser.add_argument("--cache-file", dest='cache_file', default='./cookies.json',
-                        help="JSON file in which cookies are cached, default is ./cookies.json")
-    parser.add_argument("--display-days", dest='display_days', default=False, action='store_true',
-                        help="Display usage per-day")
+    parser.add_argument(
+        "--display-days",
+        dest="display_days",
+        default=False,
+        action="store_true",
+        help="Display usage per-day",
+    )
     args = parser.parse_args()
 
-    # Use cached cookies or fetch new ones
-    if args.cache and os.path.isfile(args.cache_file):
-        print("Using cached cookies")
-        with open(args.cache_file, 'r') as f:
-            cookies = json.loads(f.read())
-    else:
-        username = os.environ.get('TELENET_USERNAME', None)
-        password = os.environ.get('TELENET_PASSWORD', None)
-
-        if username is None:
-            username = input('Username: ')
-
-        if password is None:
-            password = getpass('Password: ')
-
-        print("Fetching cookies")
-
-        cookies = get_telemeter_cookies(username, password, headless=args.headless)
-        with open('cookies.json', 'w+') as f:
-            f.write(json.dumps(cookies))
-
     # Attempt to get the API data
-    try:
-        print("Fetching Telemeter data")
-        meter_json, service_limit = get_telemeter_json(cookies)
-        telemeter = Telemeter.from_json(meter_json, service_limit)
-    except UnauthorizedException:
-        print("Request unauthorized, removing cached cookies")
-        os.remove(args.cache_file)
-        return
+    print("Fetching Telemeter data")
+    username = os.environ.get("TELENET_USERNAME") or input("Email: ")
+    password = os.environ.get("TELENET_PASSWORD") or getpass("Password: ")
+
+    session = TelenetSession()
+    session.login(username, password)
+    telemeter = session.telemeter()
+    print(telemeter)
 
     if args.display_days:
         print()
-        for day in telemeter.days:
-            print(day)
-
-    print()
-    print(telemeter)
+        for product in telemeter.products:
+            print(f"Daily usage information for {product.product_type}")
+            for day in product.daily_usage:
+                print("\t", day)
 
 
 if __name__ == "__main__":
