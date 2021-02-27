@@ -11,7 +11,7 @@ fi
 echo "Upgrading from $old_version to $new_version"
 
 upload_pypi() {
-    python3 -m build
+    python setup.py sdist bdist_wheel
     python3 -m twine upload --repository pypi dist/*
 }
 
