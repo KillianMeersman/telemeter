@@ -16,6 +16,17 @@ pip install telemeter
 ```
 
 ## Usage
+**As module**
+```python3
+import telemeter
+
+telenet_session = telemeter.TelenetSession()
+telenet_session.login("my_username", "my_password")
+
+my_telemeter = telenet_session.telemeter()
+```
+
+**As script**
 ```sh
 python3 telemeter/telemeter.py
 ```
