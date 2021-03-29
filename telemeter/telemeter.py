@@ -6,7 +6,7 @@ from typing import List
 import requests
 from pydantic import BaseModel
 
-TELENET_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S.0+01:00"
+TELENET_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S.0%z"
 
 
 def _kibibyte_to_gibibyte(kib):

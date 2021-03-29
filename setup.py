@@ -5,7 +5,7 @@ with open("README.md") as f:
 
 setuptools.setup(
     name="telemeter",
-    version ="3.0.1",
+    version="3.0.2",
     author="Killian Meersman",
     author_email="hi@killianm.dev",
     description="Retrieves information about Telenet internet usage",
