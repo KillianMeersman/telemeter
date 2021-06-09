@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from datetime import datetime
 from typing import List
@@ -7,6 +8,9 @@ import requests
 from pydantic import BaseModel
 
 TELENET_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S.0%z"
+
+
+logger = logging.getLogger("telemeter")
 
 
 def _kibibyte_to_gibibyte(kib):
@@ -43,6 +47,7 @@ class TelenetProductUsage(BaseModel):
 
     @classmethod
     def from_json(cls, data: dict):
+        logger.debug(f"Parsing telemeter json: {json.dumps(data, indent=4)}")
         days = [
             UsageDay(
                 date=datetime.strptime(x["date"], TELENET_DATETIME_FORMAT),
@@ -106,13 +111,20 @@ class TelenetSession(object):
             headers={
                 "x-alt-referer": "https://www2.telenet.be/nl/klantenservice/#/pages=1/menu=selfservice"
             },
+            timeout=10,
         )
+
+        # Return if already authenticated
+        if r.status_code == 200:
+            return
+
         assert r.status_code == 401
         state, nonce = r.text.split(",", maxsplit=2)
 
         # Log in
         self.s.get(
-            f"https://login.prd.telenet.be/openid/oauth/authorize?client_id=ocapi&response_type=code&claims=%7B%22id_token%22%3A%7B%22http%3A%2F%2Ftelenet.be%2Fclaims%2Froles%22%3Anull%2C%22http%3A%2F%2Ftelenet.be%2Fclaims%2Flicenses%22%3Anull%7D%7D&lang=nl&state={state}&nonce={nonce}&prompt=login"
+            f"https://login.prd.telenet.be/openid/oauth/authorize?client_id=ocapi&response_type=code&claims=%7B%22id_token%22%3A%7B%22http%3A%2F%2Ftelenet.be%2Fclaims%2Froles%22%3Anull%2C%22http%3A%2F%2Ftelenet.be%2Fclaims%2Flicenses%22%3Anull%7D%7D&lang=nl&state={state}&nonce={nonce}&prompt=login",
+            timeout=10,
         )
         r = self.s.post(
             "https://login.prd.telenet.be/openid/login.do",
@@ -121,6 +133,7 @@ class TelenetSession(object):
                 "j_password": password,
                 "rememberme": True,
             },
+            timeout=10,
         )
         assert r.status_code == 200
 
@@ -131,6 +144,7 @@ class TelenetSession(object):
             headers={
                 "x-alt-referer": "https://www2.telenet.be/nl/klantenservice/#/pages=1/menu=selfservice",
             },
+            timeout=10,
         )
         assert r.status_code == 200
 
@@ -150,55 +164,15 @@ class TelenetSession(object):
             headers={
                 "x-alt-referer": "https://www2.telenet.be/nl/klantenservice/#/pages=1/menu=selfservice",
             },
+            timeout=10,
         )
         assert r.status_code == 200
         return next(Telemeter.from_json(r.json()))
 
 
-def get_telemeter_json(cookies):
-    """Returns a tuple containing the Telemeter JSON and the max usage/month in GB"""
-
-    # Firefox wraps JSON in HTML so just make a simple request with Selenium's cookies
-    headers = {"User-Agent": USER_AGENT}
-
-    # Get JSON endpoint again with raw request
-    r = requests.get(
-        "https://api.prd.telenet.be/ocapi/public/?p=internetusage",
-        cookies=cookies,
-        headers=headers,
-    )
-
-    if 200 > r.status_code > 300:
-        raise UnauthorizedException(f"Request returned {r.status_code}")
-
-    meter_json = json.loads(r.text)
-
-    # Get max usage
-    spec_url = meter_json["internetusage"][0]["availableperiods"][0]["usages"][0][
-        "specurl"
-    ]
-    r = requests.get(spec_url, cookies=cookies, headers=headers)
-
-    # parse JSON
-    spec_json = json.loads(r.text)
-    service_limit = int(
-        spec_json["product"]["characteristics"]["service_category_limit"]["value"]
-    )
-    service_limit_unit = spec_json["product"]["characteristics"][
-        "service_category_limit"
-    ]["unit"]
-
-    if service_limit_unit == "MB":
-        service_limit /= 1000
-    elif service_limit_unit == "TB":
-        service_limit *= 1000
-
-    return (meter_json, service_limit)
-
-
 def _main():
-    from getpass import getpass
     import argparse
+    from getpass import getpass
 
     parser = argparse.ArgumentParser(
         prog="Telenet Telemeter parser",
