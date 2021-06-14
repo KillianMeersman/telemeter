@@ -18,7 +18,7 @@ upload_pypi() {
 }
 
 change_version() {
-    sed -i -E "s/version=\"$1\"/version =\"$2\"/" $version_file
+    sed -i -E "s/version=\"$1\"/version=\"$2\"/" $version_file
 }
 
 # Change source version
