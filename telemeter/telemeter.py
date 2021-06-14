@@ -17,21 +17,25 @@ def _kibibyte_to_gibibyte(kib):
     return kib / (2 ** 20)
 
 
-class UnauthorizedException(Exception):
-    pass
-
-
 class UsageDay(BaseModel):
     """Represents a day of internet usage"""
 
     date: datetime
     peak_usage: int
     offpeak_usage: int
+    total_usage: int
 
     def __str__(self):
-        peak_usage_gib = _kibibyte_to_gibibyte(self.peak_usage)
-        offpeak_usage_gib = _kibibyte_to_gibibyte(self.offpeak_usage)
-        return f"{self.date.strftime('%Y-%m-%d')}: {peak_usage_gib:4.2f} GiB\t{offpeak_usage_gib:4.2f} GiB"
+        date_str = self.date.strftime("%Y-%m-%d")
+        if self.peak_usage or self.offpeak_usage:
+            peak_usage_gib = _kibibyte_to_gibibyte(self.peak_usage)
+            offpeak_usage_gib = _kibibyte_to_gibibyte(self.offpeak_usage)
+            return (
+                f"{date_str}: {peak_usage_gib:4.2f} GiB\t{offpeak_usage_gib:4.2f} GiB"
+            )
+        else:
+            usage_gib = _kibibyte_to_gibibyte(self.total_usage)
+            return f"{date_str}: {usage_gib:4.2f} GiB"
 
 
 class TelenetProductUsage(BaseModel):
@@ -43,6 +47,7 @@ class TelenetProductUsage(BaseModel):
     included_volume: int
     peak_usage: int
     offpeak_usage: int
+    total_usage: int
     daily_usage: List[UsageDay]
 
     @classmethod
@@ -51,11 +56,20 @@ class TelenetProductUsage(BaseModel):
         days = [
             UsageDay(
                 date=datetime.strptime(x["date"], TELENET_DATETIME_FORMAT),
-                peak_usage=x["peak"],
-                offpeak_usage=x["offpeak"],
+                peak_usage=x.get("peak", 0),
+                offpeak_usage=x.get("offpeak", 0),
+                total_usage=x.get("included", 0),
             )
             for x in data["totalusage"]["dailyusages"]
         ]
+
+        peak_usage = data["totalusage"].get("peak", 0)
+        offpeak_usage = data["totalusage"].get("offpeak", 0)
+
+        included_usage = data["totalusage"].get("includedvolume", 0)
+        extended_usage = data["totalusage"].get("extendedvolume", 0)
+
+        total_usage = peak_usage + offpeak_usage + included_usage + extended_usage
 
         return cls(
             product_type=data["producttype"],
@@ -65,15 +79,21 @@ class TelenetProductUsage(BaseModel):
             ),
             period_end=datetime.strptime(data["periodend"], TELENET_DATETIME_FORMAT),
             included_volume=data["includedvolume"],
-            peak_usage=data["totalusage"]["peak"],
-            offpeak_usage=data["totalusage"]["offpeak"],
+            peak_usage=peak_usage,
+            offpeak_usage=offpeak_usage,
+            total_usage=total_usage,
             daily_usage=days,
         )
 
     def __str__(self):
-        peak_usage_gib = _kibibyte_to_gibibyte(self.peak_usage)
-        offpeak_usage_gib = _kibibyte_to_gibibyte(self.offpeak_usage)
-        return f"Usage for {self.product_type}: {peak_usage_gib:4.2f} GiB peak usage, {offpeak_usage_gib:4.2f} GiB offpeak usage"
+        if self.peak_usage or self.offpeak_usage:
+            peak_usage_gib = _kibibyte_to_gibibyte(self.peak_usage)
+            offpeak_usage_gib = _kibibyte_to_gibibyte(self.offpeak_usage)
+            return f"Usage for {self.product_type}: {peak_usage_gib:4.2f} GiB peak usage, {offpeak_usage_gib:4.2f} GiB offpeak usage"
+        else:
+            usage_gib = _kibibyte_to_gibibyte(self.total_usage)
+            included_gib = _kibibyte_to_gibibyte(self.included_volume)
+            return f"Usage for {self.product_type}: {usage_gib:4.2f} GiB of {included_gib:4.2f} GiB"
 
 
 class Telemeter(BaseModel):
