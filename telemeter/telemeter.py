@@ -120,9 +120,7 @@ class Telemeter(BaseModel):
 class TelenetSession(object):
     def __init__(self):
         self.s = requests.Session()
-        self.s.headers[
-            "User-Agent"
-        ] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.182 Safari/537.36"
+        self.s.headers["User-Agent"] = "TelemeterPython/3"
 
     def login(self, username, password):
         # Get OAuth2 state / nonce
@@ -142,8 +140,8 @@ class TelenetSession(object):
         state, nonce = r.text.split(",", maxsplit=2)
 
         # Log in
-        self.s.get(
-            f"https://login.prd.telenet.be/openid/oauth/authorize?client_id=ocapi&response_type=code&claims=%7B%22id_token%22%3A%7B%22http%3A%2F%2Ftelenet.be%2Fclaims%2Froles%22%3Anull%2C%22http%3A%2F%2Ftelenet.be%2Fclaims%2Flicenses%22%3Anull%7D%7D&lang=nl&state={state}&nonce={nonce}&prompt=login",
+        r = self.s.get(
+            f'https://login.prd.telenet.be/openid/oauth/authorize?client_id=ocapi&response_type=code&claims={{"id_token":{{"http://telenet.be/claims/roles":null,"http://telenet.be/claims/licenses":null}}}}&lang=nl&state={state}&nonce={nonce}&prompt=login',
             timeout=10,
         )
         r = self.s.post(
@@ -157,7 +155,7 @@ class TelenetSession(object):
         )
         assert r.status_code == 200
 
-        self.s.headers["X-TOKEN-XSRF"] = self.s.cookies["TOKEN-XSRF"]
+        self.s.headers["X-TOKEN-XSRF"] = self.s.cookies.get("TOKEN-XSRF")
 
         r = self.s.get(
             "https://api.prd.telenet.be/ocapi/oauth/userdetails",
