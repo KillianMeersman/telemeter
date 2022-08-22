@@ -1,11 +1,11 @@
 import json
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime
 from typing import List
 
 import requests
-from pydantic import BaseModel
 
 TELENET_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S.0%z"
 
@@ -17,7 +17,8 @@ def _kibibyte_to_gibibyte(kib):
     return kib / (2**20)
 
 
-class UsageDay(BaseModel):
+@dataclass
+class UsageDay(object):
     """Represents a day of internet usage"""
 
     date: datetime
@@ -38,7 +39,8 @@ class UsageDay(BaseModel):
             return f"{date_str}: {usage_gib:4.2f} GiB"
 
 
-class TelenetProductUsage(BaseModel):
+@dataclass
+class TelenetProductUsage(object):
     product_type: str
     squeezed: bool
     period_start: datetime
@@ -95,7 +97,8 @@ class TelenetProductUsage(BaseModel):
             return f"Usage for {self.product_type}: {usage_gib:4.2f} GiB of {included_gib:4.2f} GiB"
 
 
-class Telemeter(BaseModel):
+@dataclass
+class Telemeter(object):
     period_start: datetime
     period_end: datetime
     products: List[TelenetProductUsage]
