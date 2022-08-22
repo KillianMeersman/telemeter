@@ -14,7 +14,7 @@ logger = logging.getLogger("telemeter")
 
 
 def _kibibyte_to_gibibyte(kib):
-    return kib / (2 ** 20)
+    return kib / (2**20)
 
 
 class UsageDay(BaseModel):
@@ -66,10 +66,9 @@ class TelenetProductUsage(BaseModel):
         peak_usage = data["totalusage"].get("peak", 0)
         offpeak_usage = data["totalusage"].get("offpeak", 0)
 
-        included_usage = data["totalusage"].get("includedvolume", 0)
-        extended_usage = data["totalusage"].get("extendedvolume", 0)
-
-        total_usage = peak_usage + offpeak_usage + included_usage + extended_usage
+        included_volume = data.get("includedvolume", 0) + data.get(
+            "extendedvolume", {}
+        ).get("volume", 0)
 
         return cls(
             product_type=data["producttype"],
@@ -78,10 +77,10 @@ class TelenetProductUsage(BaseModel):
                 data["periodstart"], TELENET_DATETIME_FORMAT
             ),
             period_end=datetime.strptime(data["periodend"], TELENET_DATETIME_FORMAT),
-            included_volume=data["includedvolume"],
+            included_volume=included_volume,
             peak_usage=peak_usage,
             offpeak_usage=offpeak_usage,
-            total_usage=total_usage,
+            total_usage=peak_usage + offpeak_usage,
             daily_usage=days,
         )
 
@@ -120,7 +119,9 @@ class Telemeter(BaseModel):
 class TelenetSession(object):
     def __init__(self):
         self.s = requests.Session()
-        self.s.headers["User-Agent"] = "TelemeterPython/3"
+        self.s.headers[
+            "User-Agent"
+        ] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36"
 
     def login(self, username, password):
         # Get OAuth2 state / nonce
@@ -156,15 +157,6 @@ class TelenetSession(object):
         assert r.status_code == 200
 
         self.s.headers["X-TOKEN-XSRF"] = self.s.cookies.get("TOKEN-XSRF")
-
-        r = self.s.get(
-            "https://api.prd.telenet.be/ocapi/oauth/userdetails",
-            headers={
-                "x-alt-referer": "https://www2.telenet.be/nl/klantenservice/#/pages=1/menu=selfservice",
-            },
-            timeout=10,
-        )
-        assert r.status_code == 200
 
     def userdetails(self):
         r = self.s.get(
