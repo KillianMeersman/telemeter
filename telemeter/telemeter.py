@@ -68,6 +68,10 @@ class TelenetProductUsage(object):
         peak_usage = data["totalusage"].get("peak", 0)
         offpeak_usage = data["totalusage"].get("offpeak", 0)
 
+        total_usage = peak_usage + offpeak_usage
+        if not total_usage:
+            total_usage = data.get("totalusage", {}).get("includedvolume", 0)
+
         included_volume = data.get("includedvolume", 0) + data.get(
             "extendedvolume", {}
         ).get("volume", 0)
@@ -82,7 +86,7 @@ class TelenetProductUsage(object):
             included_volume=included_volume,
             peak_usage=peak_usage,
             offpeak_usage=offpeak_usage,
-            total_usage=peak_usage + offpeak_usage,
+            total_usage=total_usage,
             daily_usage=days,
         )
 
