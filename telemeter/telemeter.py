@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,13 +9,22 @@ from typing import List
 import requests
 
 TELENET_DATETIME_FORMAT = "%Y-%m-%dT%H:%M:%S.0%z"
+TELENET_BYTE_BASE = 1024
 
 
 logger = logging.getLogger("telemeter")
 
 
-def _kibibyte_to_gibibyte(kib):
-    return kib / (2**20)
+def display_bytes(n, base=TELENET_BYTE_BASE):
+    if n <= 0:
+        return f"0.00B"
+
+    units = ["B", "KiB", "MiB", "GiB", "TiB"]
+    power = min(math.floor(math.log(n, base)), len(units))
+
+    n /= base**power
+    unit = units[power]
+    return f"{n:4.2f}{unit}"
 
 
 @dataclass
@@ -29,14 +39,9 @@ class UsageDay(object):
     def __str__(self):
         date_str = self.date.strftime("%Y-%m-%d")
         if self.peak_usage or self.offpeak_usage:
-            peak_usage_gib = _kibibyte_to_gibibyte(self.peak_usage)
-            offpeak_usage_gib = _kibibyte_to_gibibyte(self.offpeak_usage)
-            return (
-                f"{date_str}: {peak_usage_gib:4.2f} GiB\t{offpeak_usage_gib:4.2f} GiB"
-            )
+            return f"{date_str}: {display_bytes(self.peak_usage * TELENET_BYTE_BASE)}\t{display_bytes(self.offpeak_usage * TELENET_BYTE_BASE)}"
         else:
-            usage_gib = _kibibyte_to_gibibyte(self.total_usage)
-            return f"{date_str}: {usage_gib:4.2f} GiB"
+            return f"{date_str}: {display_bytes(self.total_usage * TELENET_BYTE_BASE)}"
 
 
 @dataclass
@@ -92,13 +97,9 @@ class TelenetProductUsage(object):
 
     def __str__(self):
         if self.peak_usage or self.offpeak_usage:
-            peak_usage_gib = _kibibyte_to_gibibyte(self.peak_usage)
-            offpeak_usage_gib = _kibibyte_to_gibibyte(self.offpeak_usage)
-            return f"Usage for {self.product_type}: {peak_usage_gib:4.2f} GiB peak usage, {offpeak_usage_gib:4.2f} GiB offpeak usage"
+            return f"Usage for {self.product_type}: {display_bytes(self.peak_usage * TELENET_BYTE_BASE)} GiB peak usage, {display_bytes(self.offpeak_usage * TELENET_BYTE_BASE)} GiB offpeak usage"
         else:
-            usage_gib = _kibibyte_to_gibibyte(self.total_usage)
-            included_gib = _kibibyte_to_gibibyte(self.included_volume)
-            return f"Usage for {self.product_type}: {usage_gib:4.2f} GiB of {included_gib:4.2f} GiB"
+            return f"Usage for {self.product_type}: {display_bytes(self.total_usage * TELENET_BYTE_BASE)} GiB of {display_bytes(self.included_volume * TELENET_BYTE_BASE)} GiB"
 
 
 @dataclass
